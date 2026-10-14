@@ -1,0 +1,15 @@
+{
+  "workbench.iconTheme": "material-icon-theme",
+  "material-icon-theme.folders.associations": {
+    "hld": "docs",
+    "lld": "docs",
+    "diagrams": "images"
+  },
+  "files.exclude": {
+    "**/docs/hld/render": true
+  },
+  "search.exclude": {
+    "**/*.docx": true,
+    "**/*.pdf": true
+  }
+}

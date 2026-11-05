@@ -18,11 +18,16 @@ Hinglish along the way. Pure HTML + CSS + JavaScript with Three.js. No build ste
 - **"Hurdles pe poster" mode.** Flip a switch and the photo appears as a framed poster on the carts, autos and patakha boxes instead, while you run as a cartoon Nawab.
 - **Samosas are the coins.** Regular samosas, golden samosas (5x), and samosa arcs over low obstacles.
 - **Power-ups:** Chai Shield (smash through anything for 7 s), Jalebi Magnet (pulls samosas to you), Mithai ka Dabba (2x points).
-- **Seven obstacle types:** diya rows, anaar (sparking), patakha boxes (jump); torans and kandil rows (slide); mithai thelas and `UP 32` autos (change lane).
+- **Eight obstacle types:** diya rows, anaar (sparking), patakha boxes, office desks with a DEADLINE laptop (jump); torans and kandil rows (slide); mithai thelas and `UP 32` autos (change lane).
 - **Diwali-night Lucknow:** lit Awadhi facades with string lights, domes and minarets, kerb diyas, rangolis, marigold torans, paper lanterns, a hazy Rumi-Darwaza skyline, rockets and fireworks.
 - **Lucknowi Hinglish everywhere:** taglines, praise for samosa streaks, near-miss lines, milestone shout-outs (Hazratganj, Rumi Darwaza, Bhool Bhulaiya, Gomti...), game-over banners and ranks from *Aminabad Rookie* to *Nawab-e-Lucknow*.
-- **Synthesised sound:** dhol-and-pluck background loop and all effects generated with WebAudio, no audio files. Mute button in the HUD.
-- **Local leaderboard**, best score, slow-motion crash, screen shake, share-to-WhatsApp text, mobile swipe controls, pause on tab switch.
+- **Game feel:** articulated runner with a real run cycle, jump tuck, forward-roll slide and tumble crash; trailing dupatta; squash and stretch on landings; 3-2-1 countdown with an intro camera swing; hit-stop and slow motion on a crash; camera bank, FOV kicks and speed streaks; samosas fly into the HUD counter; input buffering so a jump pressed just before landing still fires.
+- **Samosa chains:** keep collecting without a gap and the multiplier climbs (x2 at 10, x3 at 20, x4 at 30). Stacks with Mithai 2x.
+- **Tutorial prompts** on your first two runs ("Kood jaiye!", "Slide kijiye!", "Lane badliye!") timed to the first obstacle of each kind.
+- **Real shadows** on desktop (soft shadow map), flickering diya point lights near the runner, and adaptive quality that lowers resolution, then shadows, if a device can't hold the frame rate.
+- **Synthesised sound:** dhol-and-pluck background loop that adds layers as you go further, and all effects generated with WebAudio, no audio files. Mute button in the HUD.
+- **Optional rigged character:** drop a Mixamo (or any) GLB at `models/runner.glb` and it replaces the procedural body, with the photo head following its head bone. See `models/README.md`.
+- **Local leaderboard**, best score, share-to-WhatsApp text, mobile swipe controls, pause on tab switch with a 3-2-1 resume.
 
 ## Controls
 
@@ -51,7 +56,8 @@ Any static host works too: Netlify Drop, Vercel, Cloudflare Pages, or `npx serve
 | Speed, jump, spawn pacing, power-up durations | `js/config.js` → `ND.CFG` |
 | Banner texts on torans | `js/config.js` → `ND.TEXT.bannerTexts` |
 | Colours, fonts, UI | `css/style.css` (`:root` tokens) |
-| Obstacles and pickups | `js/entities.js` |
+| Obstacles, pickups, the runner rig | `js/entities.js` |
+| Rigged GLB runner (optional) | `models/runner.glb`, loader in `js/models.js` |
 | Street, buildings, fireworks | `js/world.js` |
 | Textures (all drawn on canvas) | `js/textures.js` |
 
@@ -64,10 +70,12 @@ js/config.js        tuning constants + Hinglish text banks
 js/audio.js         WebAudio SFX + music loop
 js/textures.js      canvas-generated textures (road, facades, samosa, banners, face sprite...)
 js/world.js         sky, street segments, buildings, diyas, torans, fireworks
-js/entities.js      player, obstacles, pickups, particles, floating text
+js/models.js        optional GLB runner loader (Mixamo drop-in)
+js/entities.js      player rig, obstacles, pickups, particles, floating text, speed streaks
 js/game.js          game loop, spawner, collisions, scoring, input, camera
 js/ui.js            screens, HUD, photo upload, leaderboard, share
 assets/             founder photo placeholder
+models/             drop models/runner.glb here for a rigged character (see models/README.md)
 ```
 
 Three.js r128 is loaded from cdnjs; everything else is in this repository.

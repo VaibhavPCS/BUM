@@ -597,6 +597,30 @@ ND.tex = (function () {
     return cache.skyline;
   };
 
+  /* ---------- dupatta ribbon ---------- */
+  T.dupatta = function () {
+    if (cache.dupatta) return cache.dupatta;
+    const [c, x] = mk(64, 256);
+    const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, '#ff9a3c'); g.addColorStop(0.5, '#ffb347'); g.addColorStop(1, '#ff7a1a');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 256);
+    x.fillStyle = '#f2c14e'; x.fillRect(0, 0, 7, 256); x.fillRect(57, 0, 7, 256);
+    for (let y = 8; y < 256; y += 24) diamond(x, 32, y, 6, 'rgba(255,240,200,0.6)');
+    cache.dupatta = toTex(c, { repeat: [1, 1] });
+    return cache.dupatta;
+  };
+
+  /* ---------- laptop screen (office desk hurdle) ---------- */
+  T.deadline = function () {
+    if (cache.deadline) return cache.deadline;
+    const [c, x] = mk(256, 160);
+    x.fillStyle = '#b3122a'; x.fillRect(0, 0, 256, 160);
+    x.fillStyle = '#ffffff'; x.font = `900 44px ${BODY}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('DEADLINE', 128, 62);
+    x.font = `700 26px ${BODY}`; x.fillStyle = '#ffe08a'; x.fillText('aaj hi hai, janaab', 128, 112);
+    cache.deadline = toTex(c);
+    return cache.deadline;
+  };
+
   /* ---------- square-crop any image/canvas to a canvas ---------- */
   T.squareCrop = function (img, size) {
     size = size || 512;

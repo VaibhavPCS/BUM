@@ -26,6 +26,7 @@
         <span id="hud-samosa">0</span>
       </div>
       <div class="pill dist-pill" title="Doori"><span id="hud-dist">0</span><small>m</small></div>
+      <div id="chain" class="pill chain-pill" hidden>🔥 <span id="chain-n">3 chain</span><span class="chain-bar"><i id="chain-bar"></i></span></div>
     </div>
     <div class="hud-center">
       <div class="score-label">Score</div>
@@ -43,6 +44,8 @@
   </header>
   <div id="toasts" aria-live="polite"></div>
   <div id="greet" hidden></div>
+  <div id="countdown" class="countdown" hidden></div>
+  <div id="fly-layer"></div>
 
   <section id="screen-start" class="screen show">
     <div class="card card-start">
@@ -152,6 +155,7 @@
 <script src="js/audio.js"></script>
 <script src="js/textures.js"></script>
 <script src="js/world.js"></script>
+<script src="js/models.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>

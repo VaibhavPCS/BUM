@@ -16,7 +16,9 @@ ND.CFG = {
   JUMP_V: 14.2,
   SLAM_V: -24,
   SLIDE_TIME: 0.85,
-  LANE_LERP: 12,
+  LANE_LERP: 15,
+  COUNTDOWN: 2.4,
+  CHAIN_TIME: 2.6,
   SPAWN_Z: -150,
   KILL_Z: 16,
   ROW_TIME: 1.05,           // seconds between obstacle rows at the start
@@ -110,8 +112,15 @@ ND.TEXT = {
     toran: 'Toran mein uljh gaye.',
     kandil: 'Kandil se sar takra gaya.',
     thela: 'Mithai ke thele se takkar!',
-    auto: 'UP 32 wale auto ne rok liya.'
+    auto: 'UP 32 wale auto ne rok liya.',
+    desk: 'Office ki desk se takra gaye, deadline bhi gayi!'
   },
+  hints: {
+    low: '\u2191 Kood jaiye!',
+    high: '\u2193 Slide kijiye!',
+    full: '\u2190 \u2192 Lane badliye!'
+  },
+  chain: ['Chain x2 \u2014 wah!', 'Chain x3 \u2014 nawabi!', 'Chain x4 \u2014 shahi raftaar!'],
   verdicts: [
     [200, 'Koi baat nahi janaab, pehli baar Lucknow aaye hain?'],
     [800, 'Theek hai, par Nawab banne mein abhi waqt hai.'],

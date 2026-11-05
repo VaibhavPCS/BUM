@@ -6,7 +6,7 @@ ND.audio = (function () {
   const A = {};
   let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null;
   let muted = !!ND.store.get('nd_muted', false);
-  const music = { on: false, timer: null, next: 0, step: 0, tempo: 1, drone: [] };
+  const music = { on: false, timer: null, next: 0, step: 0, tempo: 1, drone: [], intensity: 1 };
 
   const BPM = 124, STEPS = 32;
   // C major pentatonic, two octaves (G4 below as the "drop" note)
@@ -141,6 +141,9 @@ ND.audio = (function () {
       [NOTE.C6, NOTE.E6, 1568, 2093].forEach((f, i) => tone({ f, type: 'sine', d: 0.5, g: 0.16, when: i * 0.11 }));
     },
     click() { tone({ f: 900, type: 'square', d: 0.04, g: 0.04 }); },
+    count(n) { if (n > 0) tone({ f: 660, type: 'square', d: 0.12, g: 0.08 }); else { tone({ f: 990, type: 'square', d: 0.2, g: 0.1 }); tone({ f: 1320, type: 'triangle', d: 0.35, g: 0.12, when: 0.05 }); } },
+    roll() { noise({ f: 1400, f2: 250, type: 'lowpass', d: 0.4, g: 0.18 }); tone({ f: 160, f2: 90, type: 'sine', d: 0.25, g: 0.08 }); },
+    chain(tier) { [NOTE.C6, NOTE.E6, 1568].slice(0, 1 + tier).forEach((f, i) => tone({ f, type: 'triangle', d: 0.18, g: 0.14, when: i * 0.07 })); },
     start() { [NOTE.C5, NOTE.G5, NOTE.C6].forEach((f, i) => tone({ f, type: 'triangle', d: 0.22, g: 0.16, when: i * 0.09 })); },
     gameOver() {
       [NOTE.G5, NOTE.E5, NOTE.C5, NOTE.G4].forEach((f, i) => tone({ f, type: 'triangle', d: 0.4, g: 0.16, when: 0.2 + i * 0.19 }));
@@ -152,15 +155,20 @@ ND.audio = (function () {
     const bar = Math.floor(music.step / STEPS) % 2;
     const mel = bar === 0 ? MELODY : MELODY_B;
     const n = mel[step];
-    if (n) pluck(NOTE[n], t0, 0.16);
+    if (n) {
+      pluck(NOTE[n], t0, 0.16);
+      if (music.intensity >= 2) pluck(NOTE[n] * 1.5, t0 + 0.01, 0.07);
+    }
     if (DHOL[step]) {
       tone({ f: 165, f2: 46, type: 'sine', a: 0.003, d: 0.24, g: 0.8, t0, dest: musicBus });
       noise({ f: 260, type: 'lowpass', d: 0.08, g: 0.25, t0, dest: musicBus });
+      if (music.intensity >= 3) tone({ f: 65.4, type: 'sawtooth', a: 0.004, d: 0.2, g: 0.12, t0, dest: musicBus });
     }
-    if (TAK[step]) {
+    if (TAK[step] || (music.intensity >= 2 && step % 4 === 2)) {
       noise({ f: 3400, q: 2.5, d: 0.05, g: 0.22, t0, dest: musicBus });
       tone({ f: 1900, f2: 900, type: 'sine', d: 0.035, g: 0.05, t0, dest: musicBus });
     }
+    if (music.intensity >= 3 && step % 8 === 6) noise({ f: 2200, q: 1.5, d: 0.09, g: 0.16, t0, dest: musicBus });
   }
 
   function schedule() {
@@ -202,7 +210,7 @@ ND.audio = (function () {
     start() {
       if (!ensure()) return;
       if (music.on) return;
-      music.on = true; music.step = 0; music.next = ctx.currentTime + 0.1;
+      music.on = true; music.step = 0; music.next = ctx.currentTime + 0.1; music.intensity = 1;
       musicBus.gain.cancelScheduledValues(ctx.currentTime);
       musicBus.gain.setValueAtTime(0.4, ctx.currentTime);
       startDrone();
@@ -215,6 +223,7 @@ ND.audio = (function () {
       stopDrone();
     },
     setTempo(t) { music.tempo = t; },
+    setIntensity(i) { music.intensity = i; },
     duck(on) {
       if (!ctx) return;
       musicBus.gain.cancelScheduledValues(ctx.currentTime);

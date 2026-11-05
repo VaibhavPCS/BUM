@@ -1,11 +1,28 @@
 /* ============================================================
-   entities.js : player, obstacles, pickups, particles, text
+   entities.js : player rig, obstacles, pickups, particles,
+   floating text, speed streaks
    ============================================================ */
 (function () {
   const { rand: R, pick: PK, clamp, lerp } = ND.util;
   const C = ND.CFG;
   let M = null, G = null;
   const LABELS = { chai: 'CHAI SHIELD', jalebi: 'JALEBI MAGNET', mithai: 'MITHAI 2x' };
+  const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+  // a crispy samosa: puffed tetrahedron with flat (pinched) facets
+  function samosaGeometry() {
+    const geo = new THREE.TetrahedronGeometry(0.46, 2);
+    const p = geo.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const n = v.clone().normalize().multiplyScalar(0.46);
+      v.lerp(n, 0.45);
+      p.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.scale(1, 1.08, 0.82); geo.rotateX(0.55); geo.rotateY(0.3);
+    geo.computeVertexNormals();
+    return geo;
+  }
 
   function shared() {
     if (M) return;
@@ -13,8 +30,6 @@
     const std = (o) => new THREE.MeshStandardMaterial(o);
     const sprite = (map, color, opacity, blend) => new THREE.SpriteMaterial({ map, color, transparent: true, opacity, depthWrite: false, blending: blend || THREE.AdditiveBlending });
     const umbrellaTex = T.stripes('#e63946', '#f2c14e', false); umbrellaTex.repeat.set(2, 1);
-    const samosaGeo = new THREE.ConeGeometry(0.42, 0.62, 3).toNonIndexed();
-    samosaGeo.scale(1, 1, 0.8); samosaGeo.rotateX(0.3); samosaGeo.computeVertexNormals();
     M = {
       wood: std({ map: T.wood(), roughness: 0.9 }),
       terracotta: std({ color: 0xb5552a, roughness: 0.9 }),
@@ -22,6 +37,7 @@
       iron: std({ color: 0x2a2630, roughness: 0.6, metalness: 0.6 }),
       red: std({ color: 0xc62828, roughness: 0.7 }),
       black: std({ color: 0x14121a, roughness: 0.8 }),
+      white: std({ color: 0xf4efe6, roughness: 0.6 }),
       tyre: std({ color: 0x1a1a1a, roughness: 0.95 }),
       cracker: std({ map: T.crackerLabel(), roughness: 0.8 }),
       mithai: std({ map: T.mithaiLid(), roughness: 0.55, metalness: 0.15 }),
@@ -41,6 +57,8 @@
       samosaGold: std({ map: T.samosa(true), roughness: 0.25, metalness: 0.7, emissive: 0x8a5a10, emissiveIntensity: 0.7 }),
       jalebi: std({ color: 0xff8c1a, roughness: 0.3, metalness: 0.1, emissive: 0x7a3000, emissiveIntensity: 0.55 }),
       tea: std({ color: 0x6b3a1e, roughness: 0.3 }),
+      screen: std({ map: T.deadline(), emissive: 0xffffff, emissiveMap: T.deadline(), emissiveIntensity: 0.7 }),
+      laptop: std({ color: 0x2b2b33, roughness: 0.5, metalness: 0.4 }),
       ringGold: new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),
       shadow: new THREE.MeshBasicMaterial({ map: T.shadow(), transparent: true, depthWrite: false }),
       flame: sprite(T.flame(), 0xffd9a0, 1),
@@ -53,6 +71,7 @@
     };
     G = {
       bowlBig: new THREE.CylinderGeometry(0.24, 0.14, 0.16, 10),
+      bowlSmall: new THREE.CylinderGeometry(0.14, 0.09, 0.1, 8),
       stick: new THREE.CylinderGeometry(0.025, 0.025, 0.7, 5),
       obsPole: new THREE.CylinderGeometry(0.06, 0.07, 3.5, 8),
       poleFoot: new THREE.CylinderGeometry(0.2, 0.25, 0.2, 8),
@@ -63,59 +82,174 @@
       wheelS: new THREE.CylinderGeometry(0.32, 0.32, 0.18, 14).rotateZ(Math.PI / 2),
       hub: new THREE.CylinderGeometry(0.12, 0.12, 0.16, 10).rotateZ(Math.PI / 2),
       handle: new THREE.CylinderGeometry(0.04, 0.04, 0.8, 6),
-      samosa: samosaGeo,
+      deskLeg: new THREE.CylinderGeometry(0.035, 0.035, 0.72, 6),
+      samosa: samosaGeometry(),
       ring: new THREE.TorusGeometry(0.62, 0.05, 8, 40),
       jalebi: new THREE.TorusKnotGeometry(0.28, 0.1, 64, 8, 2, 3)
     };
   }
   ND.sharedAssets = shared;
 
+  function setShadows(obj) {
+    obj.traverse((o) => { if (o.isMesh) { o.castShadow = !!ND.shadows; o.receiveShadow = !!ND.shadows; } });
+  }
+
   /* ====================== PLAYER ====================== */
   ND.Player = class Player {
     constructor(scene) {
       shared();
       this.scene = scene;
-      this.group = new THREE.Group(); scene.add(this.group);
-      this.onLand = null;
+      this.group = new THREE.Group(); scene.add(this.group);          // lane x, jump y, lean/bank
+      this.pivot = new THREE.Group(); this.pivot.position.y = 0.9; this.group.add(this.pivot);   // roll / tumble pivot
+      this.body = new THREE.Group(); this.body.position.y = -0.9; this.pivot.add(this.body);     // feet origin, squash/stretch
+      this.rig = new THREE.Group(); this.body.add(this.rig);           // procedural meshes (hidden when a GLB model is used)
+      this.onLand = null; this.model = null; this.mixer = null; this.headBone = null;
+      this._v = new THREE.Vector3(); this._v2 = new THREE.Vector3();
       this.build();
-      this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: ND.tex.shadow(), transparent: true, depthWrite: false }));
+      this.buildRibbon();
+      this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: ND.tex.shadow(), transparent: true, depthWrite: false, opacity: ND.shadows ? 0.45 : 1 }));
       this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = 0.02; scene.add(this.shadow);
       this.reset();
     }
+
     build() {
-      const T = ND.tex;
-      const sherwani = new THREE.MeshStandardMaterial({ map: T.sherwani(), roughness: 0.75 });
-      const sleeve = new THREE.MeshStandardMaterial({ color: 0x8f1f36, roughness: 0.75 });
-      const churidar = new THREE.MeshStandardMaterial({ color: 0xf1e4c8, roughness: 0.85 });
-      const skin = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.7 });
-      const mojari = new THREE.MeshStandardMaterial({ color: 0xf2c14e, roughness: 0.4, metalness: 0.5 });
-      const box = (w, h, d, m, x, y, z) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); mesh.position.set(x, y, z); return mesh; };
-      const g = this.group;
-      this.torso = box(0.84, 0.98, 0.48, sherwani, 0, 1.3, 0); g.add(this.torso);
-      g.add(box(0.9, 0.12, 0.52, M.gold, 0, 0.86, 0));
-      g.add(box(0.72, 0.3, 0.44, churidar, 0, 0.66, 0));
-      const pivot = (x, y) => { const p = new THREE.Group(); p.position.set(x, y, 0); g.add(p); return p; };
-      this.legL = pivot(-0.2, 0.6); this.legR = pivot(0.2, 0.6);
-      for (const leg of [this.legL, this.legR]) {
-        leg.add(box(0.27, 0.62, 0.3, churidar, 0, -0.32, 0));
-        leg.add(box(0.28, 0.13, 0.44, mojari, 0, -0.63, 0.06));
-      }
-      this.armL = pivot(-0.55, 1.66); this.armR = pivot(0.55, 1.66);
-      for (const arm of [this.armL, this.armR]) {
-        arm.add(box(0.22, 0.64, 0.24, sleeve, 0, -0.33, 0));
-        arm.add(box(0.24, 0.1, 0.26, M.gold, 0, -0.6, 0));
-        arm.add(box(0.2, 0.18, 0.2, skin, 0, -0.72, 0));
-      }
-      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.2, 10), skin); neck.position.y = 1.86; g.add(neck);
+      const T = ND.tex, Rg = this.rig;
+      const std = (o) => new THREE.MeshStandardMaterial(o);
+      const sherwani = std({ map: T.sherwani(), roughness: 0.75 });
+      const sleeve = std({ color: 0x8f1f36, roughness: 0.75 });
+      const churidar = std({ color: 0xf1e4c8, roughness: 0.85 });
+      const skin = std({ color: 0xd9a066, roughness: 0.7 });
+      const mojari = std({ color: 0xf2c14e, roughness: 0.4, metalness: 0.5 });
+      const mesh = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; (parent || Rg).add(o); return o; };
+      const box = (w, h, d, m, x, y, z, parent) => mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, parent);
+      const pivotAt = (x, y, z, parent) => { const p = new THREE.Group(); p.position.set(x, y, z); (parent || Rg).add(p); return p; };
+
+      this.pelvis = box(0.62, 0.26, 0.38, churidar, 0, 0.98, 0);
+      this.torso = box(0.8, 0.74, 0.46, sherwani, 0, 1.47, 0);
+      box(0.68, 0.1, 0.42, M.gold, 0, 1.12, 0);
+      this.neck = mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.16, 10), skin, 0, 1.9, 0);
+      this.legs = [-1, 1].map((s) => {
+        const hip = pivotAt(s * 0.17, 0.95, 0);
+        box(0.24, 0.5, 0.26, churidar, 0, -0.25, 0, hip);
+        const knee = pivotAt(0, -0.5, 0, hip);
+        box(0.2, 0.42, 0.22, churidar, 0, -0.21, 0, knee);
+        box(0.22, 0.1, 0.36, mojari, 0, -0.45, 0.06, knee);
+        return { hip, knee };
+      });
+      this.arms = [-1, 1].map((s) => {
+        const sh = pivotAt(s * 0.5, 1.75, 0);
+        box(0.2, 0.38, 0.2, sleeve, 0, -0.19, 0, sh);
+        box(0.22, 0.08, 0.22, M.gold, 0, -0.36, 0, sh);
+        const el = pivotAt(0, -0.38, 0, sh);
+        box(0.17, 0.34, 0.17, sleeve, 0, -0.17, 0, el);
+        box(0.16, 0.14, 0.16, skin, 0, -0.4, 0, el);
+        sh.rotation.z = -s * 0.12;
+        return { sh, el };
+      });
+      // the face: a billboard sprite (photo + Nawabi turban)
       this.head = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.faceSprite(T.monogram()), transparent: true }));
-      this.head.scale.set(1.32, 1.32, 1); this.head.position.y = 2.38; g.add(this.head);
+      this.head.scale.set(1.3, 1.3, 1); this.head.position.set(0, 2.36, 0); this.body.add(this.head);
+      this.headY = 2.36;
+      // effects live on the group so they don't roll with the body
       this.shield = new THREE.Mesh(new THREE.SphereGeometry(1.4, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      this.shield.position.y = 1.35; this.shield.visible = false; g.add(this.shield);
+      this.shield.position.y = 1.2; this.shield.visible = false; this.group.add(this.shield);
       this.shieldRing = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.05, 8, 40), new THREE.MeshBasicMaterial({ color: 0xffe6a8, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
-      this.shieldRing.rotation.x = Math.PI / 2; this.shieldRing.position.y = 0.12; this.shieldRing.visible = false; g.add(this.shieldRing);
+      this.shieldRing.rotation.x = Math.PI / 2; this.shieldRing.position.y = 0.12; this.shieldRing.visible = false; this.group.add(this.shieldRing);
       this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.glow(), color: 0xffb347, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-      this.aura.scale.set(2.8, 2.8, 1); this.aura.position.y = 1.0; g.add(this.aura);
+      this.aura.scale.set(2.8, 2.8, 1); this.aura.position.y = 1.0; this.group.add(this.aura);
     }
+
+    buildRibbon() {
+      const N = 8; this.ribN = N; this.ribPts = [];
+      for (let i = 0; i < N; i++) this.ribPts.push(new THREE.Vector3(-0.42 - i * 0.06, 1.82, 0.2 + i * 0.16));
+      this.ribAnchor = new THREE.Object3D(); this.ribAnchor.position.set(-0.46, 1.84, 0.12); this.rig.add(this.ribAnchor);
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(N * 6), uv = new Float32Array(N * 4), nor = new Float32Array(N * 6), idx = [];
+      for (let i = 0; i < N; i++) {
+        uv[i * 4] = 0; uv[i * 4 + 1] = i / (N - 1); uv[i * 4 + 2] = 1; uv[i * 4 + 3] = i / (N - 1);
+        nor[i * 6 + 1] = 1; nor[i * 6 + 4] = 1;
+        if (i < N - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      geo.setIndex(idx);
+      this.ribbon = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: ND.tex.dupatta(), side: THREE.DoubleSide, roughness: 0.8, emissive: 0x3a1a00, emissiveIntensity: 0.35 }));
+      this.ribbon.frustumCulled = false; this.scene.add(this.ribbon);
+    }
+
+    updateRibbon(dt, speed, t) {
+      const pts = this.ribPts, N = this.ribN;
+      (this.model ? this.neck : this.ribAnchor).getWorldPosition(pts[0]);
+      if (this.model) { pts[0].x -= 0.4; pts[0].z += 0.1; }
+      const wind = clamp(speed / 30, 0.25, 1);
+      for (let i = 1; i < N; i++) {
+        const prev = pts[i - 1], p = pts[i];
+        const tx = prev.x - 0.07 + Math.sin(t * 9 + i * 0.9) * 0.05 * wind;
+        const ty = prev.y - 0.04 - (1 - wind) * 0.1 + Math.sin(t * 11 + i * 1.3) * 0.045 * wind + (i < 3 ? 0.03 : 0);
+        const tz = prev.z + 0.16;
+        const k = 1 - Math.exp(-dt * (17 - i * 1.2));
+        p.x += (tx - p.x) * k; p.y += (ty - p.y) * k; p.z += (tz - p.z) * k;
+      }
+      const pos = this.ribbon.geometry.attributes.position.array;
+      for (let i = 0; i < N; i++) {
+        const w = 0.2 * (1 - i / N) + 0.06, p = pts[i];
+        pos[i * 6] = p.x - w / 2; pos[i * 6 + 1] = p.y; pos[i * 6 + 2] = p.z;
+        pos[i * 6 + 3] = p.x + w / 2; pos[i * 6 + 4] = p.y; pos[i * 6 + 5] = p.z;
+      }
+      this.ribbon.geometry.attributes.position.needsUpdate = true;
+    }
+
+    /* optional rigged GLB character (e.g. Mixamo) */
+    setModel(gltf) {
+      const scene = gltf.scene;
+      scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+      const box = new THREE.Box3().setFromObject(scene);
+      const h = Math.max(0.01, box.max.y - box.min.y);
+      scene.scale.setScalar(1.9 / h);
+      box.setFromObject(scene);
+      scene.position.y -= box.min.y;
+      scene.position.x -= (box.min.x + box.max.x) / 2;
+      scene.position.z -= (box.min.z + box.max.z) / 2;
+      scene.rotation.y = Math.PI;
+      this.model = scene; this.body.add(scene); this.rig.visible = false;
+      this.mixer = new THREE.AnimationMixer(scene);
+      const find = (re) => gltf.animations.find((c) => re.test(c.name));
+      const clips = {
+        run: find(/run|jog|sprint/i) || find(/walk/i) || gltf.animations[0],
+        jump: find(/jump|leap/i), slide: find(/slide|roll|crouch|duck/i), death: find(/death|die|stumble|fall|hit/i)
+      };
+      this.actions = {};
+      for (const k of Object.keys(clips)) {
+        if (!clips[k]) continue;
+        const a = this.mixer.clipAction(clips[k]); this.actions[k] = a;
+        if (k !== 'run') { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
+      }
+      this.current = null;
+      let head = null;
+      scene.traverse((o) => { if (!head && o.isBone && /head/i.test(o.name)) head = o; });
+      this.headBone = head;
+      this.headY = box.max.y - (head ? 0 : 0) + 0.45;
+      this.play('run');
+    }
+    play(name, reset) {
+      const a = this.actions && (this.actions[name] || this.actions.run);
+      if (!a) return;
+      if (this.current === a && !reset) return;
+      if (this.current && this.current !== a) this.current.fadeOut(0.12);
+      a.reset().setEffectiveWeight(1).fadeIn(0.1).play();
+      this.current = a;
+    }
+    updateModel(dt, speed) {
+      if (!this.mixer) return;
+      if (this.actions.run) this.actions.run.timeScale = 0.75 + speed / 32;
+      this.mixer.update(dt);
+      if (this.headBone) {
+        this.headBone.getWorldPosition(this._v); this.body.worldToLocal(this._v);
+        this.head.position.set(this._v.x, this._v.y + 0.35, this._v.z);
+      } else this.head.position.set(0, this.headY, 0);
+    }
+
     setFace(tex) {
       const old = this.head.material.map;
       this.head.material.map = tex; this.head.material.needsUpdate = true;
@@ -123,10 +257,13 @@
     }
     reset() {
       this.lane = 1; this.x = 0; this.y = 0; this.vy = 0;
-      this.jumping = false; this.sliding = false; this.slideT = 0; this.wantSlide = false;
-      this.dead = false; this.deadT = 0; this.phase = 0;
+      this.jumping = false; this.sliding = false; this.rolling = false; this.slideT = 0; this.wantSlide = false;
+      this.dead = false; this.deadT = 0; this.phase = 0; this.t = 0; this.airT = 0;
       this.group.rotation.set(0, 0, 0); this.group.position.set(0, 0, 0);
+      this.pivot.rotation.set(0, 0, 0); this.pivot.position.y = 0.9; this.body.scale.set(1, 1, 1);
+      this.head.position.y = this.headY;
       this.shield.visible = false; this.shieldRing.visible = false; this.aura.material.opacity = 0;
+      if (this.model) this.play('run', true);
     }
     setShield(on) { this.shield.visible = on; this.shieldRing.visible = on; }
     moveLane(dir) {
@@ -136,68 +273,118 @@
     }
     jump() {
       if (this.jumping || this.dead) return false;
-      this.jumping = true; this.vy = C.JUMP_V; this.sliding = false; return true;
+      this.jumping = true; this.vy = C.JUMP_V; this.airT = 0;
+      this.sliding = false; this.rolling = false; this.pivot.rotation.x = 0; this.pivot.position.y = 0.9;
+      this.body.scale.set(0.9, 1.14, 0.9);
+      if (this.model) this.play('jump', true);
+      return true;
     }
     slide() {
       if (this.dead) return false;
       if (this.jumping) { this.vy = Math.min(this.vy, C.SLAM_V); this.wantSlide = true; return true; }
-      this.sliding = true; this.slideT = C.SLIDE_TIME; return true;
+      if (this.sliding && this.slideT > C.SLIDE_TIME * 0.4) return false;
+      this.sliding = true; this.slideT = C.SLIDE_TIME;
+      if (this.model) this.play('slide', true);
+      return true;
     }
-    die() { this.dead = true; this.vy = 7; this.jumping = true; this.sliding = false; }
+    die() {
+      this.dead = true; this.vy = 6.5; this.jumping = true; this.sliding = false; this.rolling = false;
+      if (this.model) this.play('death', true);
+    }
     bounds() {
       const P = C.PLAYER;
       return { x: this.x, bottom: this.y, top: this.y + (this.sliding ? P.slideHeight : P.height), hw: P.halfW, hd: P.halfD };
     }
+
     update(dt, t, speed, running) {
-      const g = this.group;
+      this.t = t;
+      const g = this.group, k = 1 - Math.exp(-dt * 16);
+      if (this.model) this.updateModel(dt, speed);
       if (this.dead) {
         this.deadT += dt;
         this.y += this.vy * dt; this.vy += C.GRAVITY * dt;
         if (this.y < 0) { this.y = 0; this.vy = 0; }
-        g.rotation.x = lerp(g.rotation.x, -1.5, 1 - Math.exp(-dt * 5));
+        if (!this.model) {
+          this.pivot.rotation.x = Math.max(-1.75, this.pivot.rotation.x - dt * 5.5);
+          this.pivot.position.y = lerp(this.pivot.position.y, 0.5, 1 - Math.exp(-dt * 4));
+          this.pose(dt, speed, false);
+        }
         g.rotation.z = lerp(g.rotation.z, 0.35, 1 - Math.exp(-dt * 3));
         g.position.set(this.x, this.y, Math.min(1.6, this.deadT * 2.4));
         this.shadow.position.set(this.x, 0.02, g.position.z);
+        this.updateRibbon(dt, speed * 0.3, t);
         return;
       }
-      this.phase += dt * (6 + speed * 0.3);
+      this.phase += dt * (9 + speed * 0.35);
       if (this.jumping) {
+        this.airT += dt;
         this.y += this.vy * dt; this.vy += C.GRAVITY * dt;
         if (this.y <= 0) {
           this.y = 0; this.jumping = false;
+          this.body.scale.set(1.16, 0.84, 1.16);
           if (this.onLand) this.onLand();
-          if (this.wantSlide) { this.wantSlide = false; this.sliding = true; this.slideT = C.SLIDE_TIME; }
+          if (this.wantSlide) { this.wantSlide = false; this.sliding = true; this.slideT = C.SLIDE_TIME; if (this.model) this.play('slide', true); }
+          else if (this.model) this.play('run');
         }
       }
-      if (this.sliding) { this.slideT -= dt; if (this.slideT <= 0) this.sliding = false; }
+      if (this.sliding) {
+        this.slideT -= dt;
+        const u = 1 - this.slideT / C.SLIDE_TIME, rollFrac = 0.74;
+        if (!this.model) {
+          if (u < rollFrac) {
+            const e = easeInOut(u / rollFrac);
+            this.rolling = true;
+            this.pivot.rotation.x = -Math.PI * 2 * e;
+            this.pivot.position.y = lerp(0.9, 0.62, Math.sin(e * Math.PI));
+            this.head.position.y = lerp(this.head.position.y, 1.35, k);
+          } else { this.rolling = false; this.pivot.rotation.x = 0; this.pivot.position.y = 0.9; }
+        }
+        if (this.slideT <= 0) { this.sliding = false; this.rolling = false; this.pivot.rotation.x = 0; this.pivot.position.y = 0.9; if (this.model) this.play('run'); }
+      }
+      if (!this.rolling && !this.model) this.head.position.y = lerp(this.head.position.y, this.headY, k);
+      // squash / stretch recovery
+      this.body.scale.x = lerp(this.body.scale.x, 1, k); this.body.scale.y = lerp(this.body.scale.y, 1, k); this.body.scale.z = lerp(this.body.scale.z, 1, k);
+      // lanes
       const tx = C.LANES[this.lane];
       this.x += (tx - this.x) * Math.min(1, dt * C.LANE_LERP);
-      const s = Math.sin(this.phase), k = 1 - Math.exp(-dt * 12);
-      let bob = 0;
-      if (this.jumping) {
-        this.legL.rotation.x = lerp(this.legL.rotation.x, -0.9, k); this.legR.rotation.x = lerp(this.legR.rotation.x, 0.5, k);
-        this.armL.rotation.x = lerp(this.armL.rotation.x, -2.6, k); this.armR.rotation.x = lerp(this.armR.rotation.x, -2.6, k);
-      } else if (this.sliding) {
-        this.legL.rotation.x = lerp(this.legL.rotation.x, -1.5, k); this.legR.rotation.x = lerp(this.legR.rotation.x, -1.3, k);
-        this.armL.rotation.x = lerp(this.armL.rotation.x, 1.2, k); this.armR.rotation.x = lerp(this.armR.rotation.x, 1.2, k);
-      } else {
-        const a = running ? 1 : 0.45;
-        this.legL.rotation.x = s * 0.95 * a; this.legR.rotation.x = -s * 0.95 * a;
-        this.armL.rotation.x = -s * 0.8 * a; this.armR.rotation.x = s * 0.8 * a;
-        bob = Math.abs(Math.cos(this.phase)) * 0.07 * a;
-      }
-      const targetRotX = this.sliding ? 1.25 : (this.jumping ? -0.12 : 0.1);
-      g.rotation.x = lerp(g.rotation.x, targetRotX, 1 - Math.exp(-dt * 14));
-      g.rotation.z = lerp(g.rotation.z, -(tx - this.x) * 0.25, 1 - Math.exp(-dt * 10));
-      g.rotation.y = lerp(g.rotation.y, (tx - this.x) * 0.18, 1 - Math.exp(-dt * 10));
+      if (!this.model) this.pose(dt, speed, running);
+      const lean = this.rolling ? 0 : (this.jumping ? -0.04 : (running ? -0.11 : -0.04));
+      g.rotation.x = lerp(g.rotation.x, lean, 1 - Math.exp(-dt * 10));
+      g.rotation.z = lerp(g.rotation.z, -(tx - this.x) * 0.3, 1 - Math.exp(-dt * 12));
+      g.rotation.y = lerp(g.rotation.y, (tx - this.x) * 0.2, 1 - Math.exp(-dt * 12));
+      const bob = (!this.jumping && !this.sliding) ? 0.05 * (0.5 + 0.5 * Math.cos(this.phase * 2)) * (running ? 1 : 0.5) : 0;
       g.position.set(this.x, this.y + bob, 0);
       const sh = clamp(1 - this.y * 0.28, 0.25, 1);
-      this.shadow.position.set(this.x, 0.02, 0); this.shadow.scale.set(sh * 1.6, sh * 1.6, 1); this.shadow.material.opacity = sh;
+      this.shadow.position.set(this.x, 0.02, 0); this.shadow.scale.set(sh * 1.6, sh * 1.6, 1);
+      this.shadow.material.opacity = sh * (ND.shadows ? 0.45 : 1);
       if (this.shield.visible) {
         this.shield.material.opacity = 0.16 + 0.08 * Math.sin(t * 9);
         this.shield.scale.setScalar(1 + 0.04 * Math.sin(t * 6));
         this.shieldRing.rotation.z += dt * 2;
       }
+      this.updateRibbon(dt, speed, t);
+    }
+
+    // procedural pose: run cycle, jump tuck/extend, roll tuck, tumble flail
+    pose(dt, speed, running) {
+      const k = 1 - Math.exp(-dt * 18), L = this.legs, A = this.arms;
+      const leg = (i, hip, knee) => { L[i].hip.rotation.x = lerp(L[i].hip.rotation.x, hip, k); L[i].knee.rotation.x = lerp(L[i].knee.rotation.x, knee, k); };
+      const arm = (i, sh, el) => { A[i].sh.rotation.x = lerp(A[i].sh.rotation.x, sh, k); A[i].el.rotation.x = lerp(A[i].el.rotation.x, el, k); };
+      if (this.dead) { leg(0, 0.9, -1.2); leg(1, -0.6, -0.4); arm(0, 2.3, 0.5); arm(1, -1.5, 0.9); return; }
+      if (this.rolling) { leg(0, 1.7, -2.1); leg(1, 1.6, -2.2); arm(0, 1.4, 1.9); arm(1, 1.4, 1.9); this.torso.rotation.y = 0; return; }
+      if (this.jumping) {
+        if (this.vy > 1.5) { leg(0, 1.0, -1.5); leg(1, -0.35, -0.9); arm(0, 2.5, 0.4); arm(1, 2.3, 0.5); }
+        else { leg(0, 0.6, -0.4); leg(1, 0.35, -0.5); arm(0, 1.0, 0.9); arm(1, 0.9, 0.9); }
+        return;
+      }
+      const a = running ? 1 : 0.55;
+      for (let i = 0; i < 2; i++) {
+        const p = this.phase + i * Math.PI;
+        leg(i, 0.8 * Math.sin(p) * a, -(0.22 + 1.2 * Math.max(0, Math.cos(p))) * a);
+        arm(i, -0.95 * Math.sin(p) * a, 1.15 + 0.3 * Math.sin(p) * a);
+      }
+      this.torso.rotation.y = -0.12 * Math.sin(this.phase) * a;
+      this.pelvis.rotation.y = 0.1 * Math.sin(this.phase) * a;
     }
   };
 
@@ -230,6 +417,9 @@
         const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1), sp = speed * (0.3 + Math.random() * 0.7);
         this.emit(x, y, z, Math.sin(ph) * Math.cos(th) * sp, Math.cos(ph) * sp, Math.sin(ph) * Math.sin(th) * sp, color, life * (0.6 + Math.random() * 0.6), gravity);
       }
+    }
+    puff(x, y, z, count, dirX) {
+      for (let k = 0; k < count; k++) this.emit(x + R(-0.3, 0.3), y + R(0, 0.1), z + R(-0.3, 0.3), R(-1.2, 1.2) + (dirX || 0) * 2.5, R(0.6, 2.2), R(0.5, 2.5), 0xc9a97a, R(0.3, 0.55), -1.5);
     }
     update(dt, drift) {
       const { pos, vel, col, base, life, maxLife, grav, n } = this;
@@ -274,16 +464,43 @@
     }
   };
 
+  /* ====================== SPEED STREAKS ====================== */
+  ND.Streaks = class Streaks {
+    constructor(scene, n) {
+      this.mat = new THREE.MeshBasicMaterial({ color: 0xfff1d6, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+      const geo = new THREE.PlaneGeometry(0.04, 3.4); geo.rotateX(Math.PI / 2);
+      this.items = [];
+      for (let i = 0; i < (n || 16); i++) {
+        const m = new THREE.Mesh(geo, this.mat); m.visible = false; scene.add(m);
+        this.items.push({ m, f: R(1.6, 2.6) }); this.resetItem(this.items[i], true);
+      }
+    }
+    resetItem(it, anywhere) {
+      it.m.position.set((Math.random() < 0.5 ? -1 : 1) * R(3.2, 9), R(0.4, 7), anywhere ? R(-45, 8) : R(-50, -20));
+      it.f = R(1.6, 2.8);
+    }
+    update(dt, speed) {
+      const f = clamp((speed - 19) / 16, 0, 1);
+      this.mat.opacity = 0.32 * f;
+      for (const it of this.items) {
+        it.m.visible = f > 0;
+        if (f <= 0) continue;
+        it.m.position.z += speed * it.f * dt;
+        if (it.m.position.z > 12) this.resetItem(it, false);
+      }
+    }
+  };
+
   /* ====================== OBSTACLES ====================== */
   ND.Obs = {
-    kinds: { diyaRow: 'low', anaar: 'low', crackerBox: 'low', toran: 'high', kandil: 'high', thela: 'full', auto: 'full' },
-    byKind: { low: ['diyaRow', 'crackerBox', 'anaar', 'diyaRow', 'crackerBox'], high: ['toran', 'kandil'], full: ['thela', 'auto'] },
+    kinds: { diyaRow: 'low', anaar: 'low', crackerBox: 'low', desk: 'low', toran: 'high', kandil: 'high', thela: 'full', auto: 'full' },
+    byKind: { low: ['diyaRow', 'crackerBox', 'anaar', 'desk', 'diyaRow', 'crackerBox', 'desk'], high: ['toran', 'kandil'], full: ['thela', 'auto'] },
     pools: {}, all: [], photoTex: null,
     get(type) {
       const pool = this.pools[type] || (this.pools[type] = []);
       let o = pool.pop();
       if (!o) { o = this.make(type); this.all.push(o); }
-      o.visible = true; o.userData.prevZ = null; o.userData.passed = false; o.userData.nearChecked = false;
+      o.visible = true; o.userData.prevZ = null; o.userData.passed = false; o.userData.hinted = false;
       return o;
     },
     release(o) { o.visible = false; if (o.parent) o.parent.remove(o); this.pools[o.userData.type].push(o); },
@@ -299,8 +516,10 @@
       const u = { type, kind: this.kinds[type], parts: {} };
       g.userData = u;
       this['make_' + type](g, u);
+      setShadows(g);
       const sh = new THREE.Mesh(new THREE.PlaneGeometry(u.hw * 2 + 0.5, u.hd * 2 + 0.8), M.shadow);
-      sh.rotation.x = -Math.PI / 2; sh.position.y = 0.018; g.add(sh);
+      sh.rotation.x = -Math.PI / 2; sh.position.y = 0.018; sh.receiveShadow = false; g.add(sh);
+      if (ND.shadows) sh.material = new THREE.MeshBasicMaterial({ map: ND.tex.shadow(), transparent: true, depthWrite: false, opacity: 0.4 });
       this.applyPhoto(g);
       return g;
     },
@@ -318,13 +537,14 @@
         const fl = new THREE.Sprite(M.flame); fl.scale.set(0.5, 0.78, 1); fl.position.set(x, 0.64, 0); g.add(fl); u.parts.flames.push(fl);
         const gl = new THREE.Sprite(M.glowOrange); gl.scale.set(1.4, 1.4, 1); gl.position.set(x, 0.5, 0); g.add(gl);
       }
+      u.parts.light = true;
       u.hw = 1.05; u.hd = 0.38; u.yMin = 0; u.yMax = 0.85;
     },
     make_anaar(g, u) {
       const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.2, 0.55, 10), M.terracotta); pot.position.y = 0.28; g.add(pot);
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.08, 10), M.gold); band.position.y = 0.42; g.add(band);
       const gl = new THREE.Sprite(M.glowWhite); gl.scale.set(1.1, 1.1, 1); gl.position.y = 0.66; g.add(gl);
-      u.parts.sparks = true;
+      u.parts.sparks = true; u.parts.light = true;
       u.hw = 0.5; u.hd = 0.5; u.yMin = 0; u.yMax = 0.75;
     },
     make_crackerBox(g, u) {
@@ -333,6 +553,21 @@
       for (let i = 0; i < 3; i++) { const st = new THREE.Mesh(G.stick, M.red); st.position.set(-0.5 + i * 0.16, 1.15, 0.1); st.rotation.z = 0.18 * i - 0.18; g.add(st); }
       u.hw = 0.7; u.hd = 0.5; u.yMin = 0; u.yMax = 1.0;
       this.addPhotoPlane(g, u, 0.42, 0.28, 0.48);
+    },
+    make_desk(g, u) {
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.85), M.wood); top.position.y = 0.76; g.add(top);
+      for (const [x, z] of [[-0.78, -0.35], [0.78, -0.35], [-0.78, 0.35], [0.78, 0.35]]) { const l = new THREE.Mesh(G.deskLeg, M.iron); l.position.set(x, 0.36, z); g.add(l); }
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.03, 0.36), M.laptop); base.position.set(-0.3, 0.815, 0.05); g.add(base);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.34, 0.02), M.laptop); lid.position.set(-0.3, 0.98, -0.13); lid.rotation.x = -0.25; g.add(lid);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.28), M.screen); screen.position.set(-0.3, 0.98, -0.118); screen.rotation.x = -0.25; g.add(screen);
+      const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.13, 10), M.white); mug.position.set(0.3, 0.865, 0.12); g.add(mug);
+      const papers = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.42), M.white); papers.rotation.x = -Math.PI / 2; papers.rotation.z = 0.2; papers.position.set(0.12, 0.805, -0.12); g.add(papers);
+      const bowl = new THREE.Mesh(G.bowlSmall, M.terracotta); bowl.position.set(0.55, 0.85, -0.2); g.add(bowl);
+      const fl = new THREE.Sprite(M.flame); fl.scale.set(0.32, 0.5, 1); fl.position.set(0.55, 1.08, -0.2); g.add(fl);
+      const gl = new THREE.Sprite(M.glowOrange); gl.scale.set(1.0, 1.0, 1); gl.position.set(0.55, 1.0, -0.2); g.add(gl);
+      u.parts.flames = [fl];
+      u.hw = 0.85; u.hd = 0.45; u.yMin = 0; u.yMax = 1.0;
+      this.addPhotoPlane(g, u, 0.36, 0.5, 0.43);
     },
     poles(g, u) {
       for (const x of [-1.15, 1.15]) {
@@ -400,7 +635,7 @@
       const u = o.userData, p = u.parts;
       if (p.wheels) for (const w of p.wheels) w.rotation.x += speed * dt * 2.5;
       if (p.lanterns) for (const l of p.lanterns) l.rotation.z = Math.sin(t * 2.2 + l.userData.phase) * 0.22;
-      if (p.flames) p.flames.forEach((f, i) => { f.scale.y = 0.78 + 0.14 * Math.sin(t * 15 + i * 2.1); });
+      if (p.flames) p.flames.forEach((f, i) => { f.scale.y = f.scale.x * 1.5 * (1 + 0.18 * Math.sin(t * 15 + i * 2.1)); });
       if (p.sparks && particles && o.position.z > -80 && o.position.z < 6) {
         for (let i = 0; i < 2; i++) particles.emit(o.position.x + R(-0.08, 0.08), 0.6, o.position.z, R(-1.6, 1.6), R(4, 8), R(-1.6, 1.6), Math.random() < 0.3 ? 0xffffff : 0xffc24a, R(0.35, 0.7), -12);
       }
@@ -425,7 +660,7 @@
       if (type === 'samosa' || type === 'golden') {
         const golden = type === 'golden';
         const m = new THREE.Mesh(G.samosa, golden ? M.samosaGold : M.samosa);
-        m.scale.setScalar(golden ? 1.45 : 1); u.mesh = m; g.add(m);
+        m.scale.setScalar(golden ? 1.45 : 1); m.castShadow = !!ND.shadows; u.mesh = m; g.add(m);
         const halo = new THREE.Sprite(golden ? M.haloGold : M.haloWarm);
         halo.scale.set(golden ? 2.3 : 1.5, golden ? 2.3 : 1.5, 1); g.add(halo);
         u.value = golden ? C.POINTS.golden : C.POINTS.samosa; u.r = golden ? 1.1 : 0.95;

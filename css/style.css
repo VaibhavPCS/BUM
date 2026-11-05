@@ -129,6 +129,24 @@ b { font-weight: 800; }
 }
 #greet.in { opacity: 1; transform: translateX(-50%); }
 
+/* ---------------- countdown, chain, flying samosas ---------------- */
+.countdown {
+  position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%);
+  font-family: var(--display); font-weight: 900; font-size: clamp(72px, 16vw, 150px); line-height: 1; color: var(--gold-2);
+  text-shadow: 0 0 30px rgba(242, 193, 78, 0.7), 0 4px 0 rgba(90, 40, 0, 0.8); white-space: nowrap;
+}
+.countdown.go { font-size: clamp(34px, 7vw, 64px); font-family: var(--body); font-weight: 800; color: #fff3dc; }
+.countdown.pop { animation: countPop 0.75s cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+@keyframes countPop { 0% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; } 25% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0; } }
+.chain-pill { font-size: 15px; gap: 6px; white-space: nowrap; }
+.chain-pill.hot { border-color: var(--gold); box-shadow: 0 0 14px rgba(242, 193, 78, 0.5); }
+.chain-bar { width: 56px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.chain-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff5c3c, var(--gold)); transform-origin: left; }
+#fly-layer { position: fixed; inset: 0; pointer-events: none; }
+.fly { position: absolute; left: 0; top: 0; width: 28px; height: 28px; opacity: 1; transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.2, 1), opacity 0.45s; filter: drop-shadow(0 0 6px rgba(255, 180, 60, 0.9)); }
+.fly svg { width: 100%; height: 100%; }
+.toast.hint { color: #fff8e8; background: linear-gradient(180deg, #ff9a3c, #e85d1f); border-color: #ffd27a; font-size: clamp(18px, 4vw, 26px); }
+
 /* ---------------- screens & cards ---------------- */
 .screen {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -262,6 +280,7 @@ b { font-weight: 800; }
   .samosa-ico { width: 20px; height: 20px; }
   .icon-btn { width: 40px; height: 40px; }
   .power-name { display: none; }
+  .chain-pill { font-size: 13px; }
   .btn-primary { font-size: 18px; padding: 12px 26px; }
   .avatar-box { gap: 12px; padding: 10px 12px; }
   .avatar-meta { flex-basis: 150px; }

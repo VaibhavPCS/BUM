@@ -145,6 +145,17 @@
       const s = this.scene;
       s.add(new THREE.HemisphereLight(0xffd9b3, 0x2a1230, 0.6));
       const moon = new THREE.DirectionalLight(0x9fb4ff, 0.55); moon.position.set(-10, 24, -14); s.add(moon);
+      this.moon = moon;
+      if (ND.shadows) {
+        moon.castShadow = true;
+        moon.shadow.mapSize.set(2048, 2048);
+        const sc = moon.shadow.camera;
+        sc.left = -11; sc.right = 11; sc.top = 26; sc.bottom = -16; sc.near = 0.5; sc.far = 90;
+        moon.shadow.bias = -0.0012; moon.shadow.normalBias = 0.03;
+        moon.target.position.set(0, 0, -8); s.add(moon.target);
+      }
+      // two pooled flickering diya lights that the game parks on the nearest diya obstacles
+      this.diyaLights = [0, 1].map(() => { const l = new THREE.PointLight(0xff9a3c, 0, 7, 2); l.position.set(0, -50, 0); s.add(l); return l; });
       const key = new THREE.PointLight(0xffb067, 1.25, 26, 2); key.position.set(0, 4.2, 3.5); s.add(key);
       const ahead = new THREE.PointLight(0xff8a3c, 0.9, 40, 2); ahead.position.set(0, 2.5, -28); s.add(ahead);
       const far = new THREE.PointLight(0xffa860, 0.6, 60, 2); far.position.set(0, 3, -70); s.add(far);
@@ -180,6 +191,7 @@
     buildGround() {
       const g = new THREE.Mesh(new THREE.PlaneGeometry(40, 300), new THREE.MeshStandardMaterial({ map: this.T.ground(), roughness: 0.95, metalness: 0.02 }));
       g.rotation.x = -Math.PI / 2; g.position.set(0, 0, -120);
+      g.receiveShadow = !!ND.shadows;
       this.ground = g; this.scene.add(g);
     }
 
@@ -187,7 +199,7 @@
     makeSegment(i) {
       const seg = new THREE.Group();
       seg.position.z = 20 - i * C.SEG_LEN;
-      seg.userData = { phase: Math.random() * 10, buildings: [], lights: null, rangolis: [], toran: null, lanterns: [] };
+      seg.userData = { phase: Math.random() * 10, buildings: [], lights: null, rangolis: [], toran: null, lanterns: [], wires: [] };
       this.addDiyas(seg);
       this.addLampPosts(seg);
       this.addToran(seg);
@@ -238,6 +250,23 @@
         g.add(lan); seg.userData.lanterns.push(lan);
         seg.add(g);
       }
+      // wires with bulbs: kerb wires run to the next lamp post, one wire crosses the road
+      const wire = (a, b, n, sag) => {
+        const p = [], c = [];
+        for (let i = 0; i <= n; i++) {
+          const t = i / n, y = a.y + (b.y - a.y) * t - sag * Math.sin(t * Math.PI);
+          p.push(a.x + (b.x - a.x) * t, y, a.z + (b.z - a.z) * t);
+          const col = new THREE.Color(PK(FESTIVE)); c.push(col.r, col.g, col.b);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c), 3));
+        const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.36, map: this.T.glow(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        pts.frustumCulled = false; seg.add(pts); seg.userData.wires.push(pts);
+      };
+      wire(new THREE.Vector3(-6.4, 4.9, z), new THREE.Vector3(-6.4, 4.9, z - C.SEG_LEN), 26, 0.9);
+      wire(new THREE.Vector3(6.4, 4.9, z), new THREE.Vector3(6.4, 4.9, z - C.SEG_LEN), 26, 0.9);
+      wire(new THREE.Vector3(-6.4, 4.9, z), new THREE.Vector3(6.4, 4.9, z), 18, 0.6);
     }
 
     addToran(seg) {
@@ -365,6 +394,7 @@
         const u = seg.userData;
         u.flames.material.size = 0.6 + 0.1 * Math.sin(t * 13 + u.phase) + 0.05 * Math.sin(t * 29 + u.phase * 3);
         if (u.lights) u.lights.material.opacity = 0.78 + 0.22 * Math.sin(t * 4.5 + u.phase);
+        for (let w = 0; w < u.wires.length; w++) u.wires[w].material.opacity = 0.7 + 0.3 * Math.sin(t * 5 + u.phase + w * 2);
         for (const lan of u.lanterns) lan.rotation.z = Math.sin(t * 1.4 + lan.userData.phase) * 0.13;
       }
       this.stars.material.opacity = 0.8 + 0.15 * Math.sin(t * 0.7);

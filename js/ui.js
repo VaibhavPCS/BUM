@@ -19,7 +19,8 @@
         'tagline', 'avatar-img', 'photo-input', 'btn-photo-reset', 'photo-name', 'name-input', 'btn-start', 'btn-board', 'start-best',
         'btn-resume', 'btn-restart', 'btn-pause-menu', 'pause-line',
         'over-title', 'over-sub', 'over-score', 'over-samosa', 'over-dist', 'over-best', 'over-rank', 'over-verdict', 'over-newbest', 'over-avatar',
-        'btn-retry', 'btn-share', 'btn-menu', 'board-list', 'btn-board-close', 'btn-board-clear', 'controls-hint', 'share-text'];
+        'btn-retry', 'btn-share', 'btn-menu', 'board-list', 'btn-board-close', 'btn-board-clear', 'controls-hint', 'share-text',
+        'countdown', 'fly-layer', 'chain', 'chain-n', 'chain-bar'];
       ids.forEach((id) => { this.els[id] = document.getElementById(id); });
       const E = this.els;
 
@@ -47,7 +48,7 @@
       E['btn-board'].addEventListener('click', () => { ND.audio.sfx.click(); this.showBoard(); });
       E['btn-board-close'].addEventListener('click', () => { ND.audio.sfx.click(); this.showScreen(this.game.state === 'over' ? 'over' : 'start'); });
       E['btn-board-clear'].addEventListener('click', () => { ND.store.del('nd_board'); this.renderBoard(); });
-      E['btn-pause'].addEventListener('click', () => { if (this.game.state === 'playing') this.game.pause(); });
+      E['btn-pause'].addEventListener('click', () => { if (this.game.state === 'playing' || this.game.state === 'resuming') this.game.pause(); });
       E['btn-resume'].addEventListener('click', () => this.game.resume());
       E['btn-restart'].addEventListener('click', () => { this.game.start(); });
       E['btn-pause-menu'].addEventListener('click', () => this.game.toMenu());
@@ -133,6 +134,11 @@
       if (state === 'playing') {
         this.showScreen(null); E['hud'].hidden = false; E['hud'].classList.add('show');
         E['vignette'].classList.add('on');
+      } else if (state === 'countdown') {
+        this.showScreen(null); E['hud'].hidden = false; E['hud'].classList.add('show');
+        this.lastHud = {}; this.updateHud(this.game);
+      } else if (state === 'resuming') {
+        this.showScreen(null);
       } else if (state === 'paused') {
         E['pause-line'].textContent = PK(TX.pause); this.showScreen('pause');
       } else if (state === 'menu') {
@@ -149,9 +155,9 @@
       E['over-title'].textContent = PK(TX.gameOver);
       E['over-sub'].textContent = TX.causes[s.cause] || '';
       E['over-verdict'].textContent = s.verdict;
-      E['over-score'].textContent = fmt(s.score);
-      E['over-samosa'].textContent = fmt(s.samosas);
-      E['over-dist'].textContent = fmt(s.dist) + ' m';
+      this.countUp(E['over-score'], s.score, 900);
+      this.countUp(E['over-samosa'], s.samosas, 700);
+      this.countUp(E['over-dist'], s.dist, 800, ' m');
       E['over-best'].textContent = fmt(s.best);
       E['over-rank'].textContent = (name ? name + ' · ' : '') + s.rank;
       E['over-newbest'].hidden = !s.newBest;
@@ -160,6 +166,41 @@
       this.addToBoard(name || 'Nawab', s);
       E['share-text'].value = this.shareText(s, name);
       this.showScreen('over');
+    },
+
+    countUp(el, to, ms, suffix) {
+      const t0 = performance.now();
+      const tick = (now) => {
+        const u = clamp((now - t0) / ms, 0, 1), e = 1 - Math.pow(1 - u, 3);
+        el.textContent = fmt(Math.round(to * e)) + (suffix || '');
+        if (u < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    },
+    countdown(text, go) {
+      const el = this.els['countdown'];
+      el.textContent = text; el.hidden = !text;
+      el.classList.toggle('go', !!go);
+      el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+      if (go) { clearTimeout(this.countT); this.countT = setTimeout(() => { el.hidden = true; }, 900); }
+    },
+    hint(kind) {
+      const text = TX.hints[kind]; if (!text) return;
+      this.toast(text, 'hint', 1700);
+    },
+    flySamosa(pt) {
+      const layer = this.els['fly-layer'];
+      if (!layer || layer.children.length > 12) { this.bumpSamosa(); return; }
+      const target = this.els['hud-samosa'].parentElement.getBoundingClientRect();
+      const el = document.createElement('div'); el.className = 'fly';
+      el.innerHTML = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 L29 27 Q16 31 3 27 Z" fill="#e6a23c" stroke="#5a2c0a" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+      el.style.transform = `translate(${pt.x - 14}px, ${pt.y - 14}px) scale(1.3)`;
+      layer.appendChild(el);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.transform = `translate(${target.left + target.width / 2 - 14}px, ${target.top + target.height / 2 - 14}px) scale(0.55)`;
+        el.style.opacity = '0.85';
+      }));
+      setTimeout(() => { el.remove(); this.bumpSamosa(); }, 480);
     },
 
     /* ---------- HUD ---------- */
@@ -172,6 +213,12 @@
       if (L.best !== g.best) { E['hud-best'].textContent = fmt(g.best); L.best = g.best; }
       const mult = g.powers.mithai > 0;
       if (L.mult !== mult) { E['hud-mult'].hidden = !mult; L.mult = mult; }
+      const chainOn = g.chain >= 3;
+      if (L.chainOn !== chainOn) { E['chain'].hidden = !chainOn; L.chainOn = chainOn; }
+      if (chainOn) {
+        if (L.chain !== g.chain || L.tier !== g.chainTier) { E['chain-n'].textContent = window.innerWidth < 520 ? `${g.chain} · x${1 + g.chainTier}` : `${g.chain} chain · x${1 + g.chainTier}`; L.chain = g.chain; L.tier = g.chainTier; E['chain'].classList.toggle('hot', g.chainTier > 0); }
+        E['chain-bar'].style.transform = `scaleX(${clamp(g.chainT / ND.CFG.CHAIN_TIME, 0, 1)})`;
+      }
       for (const k of ['chai', 'jalebi', 'mithai']) {
         const v = g.powers[k], pill = this.pill(k);
         const on = v > 0;

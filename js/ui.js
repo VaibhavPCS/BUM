@@ -20,7 +20,7 @@
         'btn-resume', 'btn-restart', 'btn-pause-menu', 'pause-line',
         'over-title', 'over-sub', 'over-score', 'over-samosa', 'over-dist', 'over-best', 'over-rank', 'over-verdict', 'over-newbest', 'over-avatar',
         'btn-retry', 'btn-share', 'btn-menu', 'board-list', 'btn-board-close', 'btn-board-clear', 'controls-hint', 'share-text',
-        'countdown', 'fly-layer', 'chain', 'chain-n', 'chain-bar'];
+        'countdown', 'fly-layer', 'chain', 'chain-n', 'chain-bar', 'banner', 'banner-text', 'btn-voice', 'voice-hint'];
       ids.forEach((id) => { this.els[id] = document.getElementById(id); });
       const E = this.els;
 
@@ -55,8 +55,13 @@
       E['btn-retry'].addEventListener('click', () => this.game.start());
       E['btn-menu'].addEventListener('click', () => this.game.toMenu());
       E['btn-share'].addEventListener('click', () => this.share());
-      E['btn-mute'].addEventListener('click', () => { ND.audio.unlock(); const m = ND.audio.toggle(); this.renderMute(m); });
+      E['btn-mute'].addEventListener('click', () => { ND.audio.unlock(); const m = ND.audio.toggle(); this.renderMute(m); if (m) ND.voice.cancel(); });
       this.renderMute(ND.audio.isMuted());
+      if (ND.voice.available()) {
+        E['btn-voice'].addEventListener('click', () => { const on = ND.voice.toggle(); this.renderVoice(on); if (on) ND.voice.say('Irshad, irshad!', { force: true }); });
+        this.renderVoice(ND.voice.isEnabled());
+        E['voice-hint'].hidden = false;
+      } else { E['btn-voice'].hidden = true; }
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           if (this.game.state === 'menu' && !E['screen-board'].classList.contains('show') && document.activeElement !== E['name-input']) this.game.start();
@@ -129,7 +134,7 @@
       });
       document.body.dataset.screen = name || 'none';
     },
-    onStateChange(state) {
+    onStateChange(state, extra) {
       const E = this.els;
       if (state === 'playing') {
         this.showScreen(null); E['hud'].hidden = false; E['hud'].classList.add('show');
@@ -140,7 +145,7 @@
       } else if (state === 'resuming') {
         this.showScreen(null);
       } else if (state === 'paused') {
-        E['pause-line'].textContent = PK(TX.pause); this.showScreen('pause');
+        E['pause-line'].textContent = extra || PK(TX.pause); this.showScreen('pause');
       } else if (state === 'menu') {
         E['hud'].hidden = true; E['vignette'].classList.remove('on');
         E['start-best'].textContent = fmt(this.game.best);
@@ -152,7 +157,7 @@
     showGameOver(s) {
       const E = this.els;
       const name = (E['name-input'].value || '').trim();
-      E['over-title'].textContent = PK(TX.gameOver);
+      E['over-title'].textContent = s.banner || PK(TX.gameOver);
       E['over-sub'].textContent = TX.causes[s.cause] || '';
       E['over-verdict'].textContent = s.verdict;
       this.countUp(E['over-score'], s.score, 900);
@@ -241,6 +246,17 @@
       el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
     },
     renderMute(m) { this.els['btn-mute'].textContent = m ? '🔇' : '🔊'; this.els['btn-mute'].setAttribute('aria-label', m ? 'Sound off' : 'Sound on'); },
+    renderVoice(on) {
+      const b = this.els['btn-voice']; b.textContent = on ? '🗣️' : '🙊'; b.classList.toggle('off', !on);
+      b.setAttribute('aria-label', on ? 'Awaaz on' : 'Awaaz off'); b.title = on ? 'Lucknowi awaaz: on' : 'Lucknowi awaaz: off';
+    },
+    banner(text) {
+      const el = this.els['banner']; this.els['banner-text'].textContent = text;
+      el.hidden = false; el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+      this.els['toasts'].classList.add('pushed');
+      clearTimeout(this.bannerT);
+      this.bannerT = setTimeout(() => { el.hidden = true; this.els['toasts'].classList.remove('pushed'); }, 2700);
+    },
 
     /* ---------- toasts ---------- */
     toast(text, kind, ms) {

@@ -26,6 +26,7 @@ Hinglish along the way. Pure HTML + CSS + JavaScript with Three.js. No build ste
 - **Samosa chains:** keep collecting without a gap and the multiplier climbs (x2 at 10, x3 at 20, x4 at 30). Stacks with Mithai 2x.
 - **Tutorial prompts** on your first two runs ("Kood jaiye!", "Slide kijiye!", "Lane badliye!") timed to the first obstacle of each kind.
 - **Real shadows** on desktop (soft shadow map), flickering diya point lights near the runner, and adaptive quality that lowers resolution, then shadows, if a device can't hold the frame rate.
+- **Lucknowi announcer (voice):** milestones, power-ups, chains, hints, the pause line and the game-over verdict are spoken aloud with the browser's own speech synthesis. It prefers a Hindi (India) voice and speaks proper Devanagari versions of the lines, falls back to an Indian English voice reading the Hinglish, and ducks the music while talking. Toggle with the 🗣️ button in the HUD; the mute button silences it too. Milestones also get a big centre banner.
 - **Synthesised sound:** dhol-and-pluck background loop that adds layers as you go further, and all effects generated with WebAudio, no audio files. Mute button in the HUD.
 - **Optional rigged character:** drop a Mixamo (or any) GLB at `models/runner.glb` and it replaces the procedural body, with the photo head following its head bone. See `models/README.md`.
 - **Local leaderboard**, best score, share-to-WhatsApp text, mobile swipe controls, pause on tab switch with a 3-2-1 resume.
@@ -54,6 +55,7 @@ Any static host works too: Netlify Drop, Vercel, Cloudflare Pages, or `npx serve
 |---|---|
 | Founder photo | `assets/founder.jpg` (see `assets/README.md`) |
 | Hinglish lines, ranks, milestones | `js/config.js` → `ND.TEXT` |
+| Spoken (Devanagari) versions of lines | `js/config.js` → `ND.TEXT.hi`, announcer in `js/voice.js` |
 | Speed, jump, spawn pacing, power-up durations | `js/config.js` → `ND.CFG` |
 | Banner texts on torans | `js/config.js` → `ND.TEXT.bannerTexts` |
 | Colours, fonts, UI | `css/style.css` (`:root` tokens) |
@@ -69,6 +71,7 @@ index.html          markup for HUD and screens
 css/style.css       styling (Diwali-night palette, Cinzel Decorative + Baloo 2)
 js/config.js        tuning constants + Hinglish text banks
 js/audio.js         WebAudio SFX + music loop
+js/voice.js         speech-synthesis announcer (Hindi / Indian English voices)
 js/textures.js      canvas-generated textures (road, facades, samosa, banners, face sprite...)
 js/world.js         sky, street segments, buildings, diyas, torans, fireworks
 js/models.js        optional GLB runner loader (Mixamo drop-in)

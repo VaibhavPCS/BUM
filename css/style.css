@@ -129,6 +129,29 @@ b { font-weight: 800; }
 }
 #greet.in { opacity: 1; transform: translateX(-50%); }
 
+/* ---------------- milestone banner ---------------- */
+.banner {
+  position: absolute; left: 50%; top: calc(clamp(150px, 22vh, 230px) + env(safe-area-inset-top, 0px));
+  transform: translate(-50%, 0); width: min(92vw, 760px); text-align: center; opacity: 0;
+}
+.banner.in { animation: bannerIn 2.7s ease forwards; }
+.banner-text {
+  font-family: var(--display); font-weight: 900; font-size: clamp(24px, 4.4vw, 46px); line-height: 1.1; color: var(--gold-2);
+  text-shadow: 0 0 26px rgba(242, 193, 78, 0.65), 0 3px 0 rgba(90, 40, 0, 0.85); text-wrap: balance;
+}
+.banner-rule { height: 3px; width: min(60vw, 420px); margin: 10px auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+@keyframes bannerIn {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.7); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1.06); }
+  20% { transform: translate(-50%, 0) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -24px) scale(1); }
+}
+#toasts { transition: transform 0.3s; }
+#toasts.pushed { transform: translateY(clamp(100px, 14vh, 140px)); }
+.icon-btn.off { opacity: 0.55; }
+.hint.small { font-size: 12px; max-width: 46ch; margin: 2px auto 8px; text-wrap: balance; }
+
 /* ---------------- countdown, chain, flying samosas ---------------- */
 .countdown {
   position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%);

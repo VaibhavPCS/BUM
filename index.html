@@ -37,6 +37,7 @@
     <div class="hud-right">
       <div class="pill best-pill" title="Best"><small>Best</small><span id="hud-best">0</span></div>
       <div class="hud-btns">
+        <button id="btn-voice" class="icon-btn" type="button" aria-label="Awaaz">🗣️</button>
         <button id="btn-mute" class="icon-btn" type="button" aria-label="Sound">🔊</button>
         <button id="btn-pause" class="icon-btn" type="button" aria-label="Pause">❚❚</button>
       </div>
@@ -44,6 +45,7 @@
   </header>
   <div id="toasts" aria-live="polite"></div>
   <div id="greet" hidden></div>
+  <div id="banner" class="banner" hidden><div id="banner-text" class="banner-text"></div><div class="banner-rule"></div></div>
   <div id="countdown" class="countdown" hidden></div>
   <div id="fly-layer"></div>
 
@@ -87,6 +89,7 @@
         <button id="btn-board" class="btn btn-ghost" type="button">🏆 Leaderboard</button>
       </div>
       <p id="controls-hint" class="hint"></p>
+      <p id="voice-hint" class="hint small" hidden>🗣️ Lucknowi awaaz on hai: milestones, power-ups aur taane bol ke sunayega. HUD se band kar sakte hain.</p>
       <p class="best-line">Best score: <b id="start-best">0</b></p>
       <p class="footer-line">Shubh Deepawali, Team PCS! · Lucknow ki tehzeeb, samose ki shaan</p>
     </div>
@@ -153,6 +156,7 @@
 
 <script src="js/config.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/voice.js"></script>
 <script src="js/textures.js"></script>
 <script src="js/world.js"></script>
 <script src="js/models.js"></script>

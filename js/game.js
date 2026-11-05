@@ -84,18 +84,24 @@
       this.state = 'countdown'; this.countT = 0; this.countStep = -1; this.last = performance.now();
       this.world.fireworks.autoRate = [3, 7];
       ND.audio.unlock(); ND.audio.sfx.start();
+      if (!this.welcomed) { this.welcomed = true; ND.voice.say(PK(TX.welcome), { force: true }); }
       this.ui.onStateChange('countdown');
     }
     beginRun() {
       this.state = 'playing';
       ND.audio.music.start();
       this.ui.onStateChange('playing');
-      this.ui.countdown(PK(TX.go), true);
+      const go = PK(TX.go);
+      this.ui.countdown(go, true);
+      ND.voice.say(go, { force: true });
     }
     pause() {
       if (this.state !== 'playing' && this.state !== 'countdown' && this.state !== 'resuming') return;
       if (this.state === 'countdown') { this.toMenu(); return; }
-      this.state = 'paused'; ND.audio.music.duck(true); this.ui.onStateChange('paused');
+      this.state = 'paused'; ND.audio.music.duck(true);
+      const line = PK(TX.pause);
+      this.ui.onStateChange('paused', line);
+      ND.voice.say(line);
     }
     resume() {
       if (this.state !== 'paused') return;
@@ -103,7 +109,7 @@
       this.ui.onStateChange('resuming');
     }
     toMenu() {
-      this.resetRun(); this.state = 'menu'; ND.audio.music.stop();
+      this.resetRun(); this.state = 'menu'; ND.audio.music.stop(); ND.voice.cancel();
       this.world.fireworks.autoRate = [1.2, 3];
       this.ui.onStateChange('menu');
     }
@@ -298,7 +304,7 @@
         ND.Obs.animate(o, dt, this.t, this.speed, this.particles);
         if (showHints && !u.hinted && o.position.z > hintZ) {
           u.hinted = true;
-          if (!this.hinted[u.kind]) { this.hinted[u.kind] = true; this.ui.hint(u.kind); }
+          if (!this.hinted[u.kind]) { this.hinted[u.kind] = true; this.ui.hint(u.kind); ND.voice.say(TX.hints[u.kind]); }
         }
         if (o.position.z > C.KILL_Z) { ND.Obs.release(o); this.obstacles.splice(i, 1); }
       }
@@ -359,7 +365,7 @@
       this.floatText.show('+' + pts, o.position.x, y + 0.6, o.position.z, '#9fffd0');
       if (this.nearCool <= 0) {
         this.nearCool = 2.2; ND.audio.sfx.nearMiss();
-        if (Math.random() < 0.4) this.ui.toast(PK(TX.nearMiss));
+        if (Math.random() < 0.4) { const line = PK(TX.nearMiss); this.ui.toast(line); ND.voice.say(line); }
       }
     }
     smash(o, i) {
@@ -368,12 +374,12 @@
       this.particles.burst(o.position.x, 1.2, o.position.z, 0xffd27a, 60, 7, 0.8, -10);
       this.floatText.show('+' + pts, o.position.x, 2.4, o.position.z, '#ffe08a');
       ND.audio.sfx.shieldHit(); this.shake = 0.5; this.fovKick = 4;
-      if (this.smashCool <= 0) { this.smashCool = 2.5; this.ui.toast(PK(TX.shieldHit), 'gold'); }
+      if (this.smashCool <= 0) { this.smashCool = 2.5; const line = PK(TX.shieldHit); this.ui.toast(line, 'gold'); ND.voice.say(line); }
     }
     die(o) {
       this.state = 'dying'; this.dyingT = 0; this.hitStop = 0.11; this.timeScale = 0; this.cause = o.userData.type;
       this.player.die(); this.player.setShield(false);
-      ND.audio.sfx.hit(); ND.audio.music.stop();
+      ND.audio.sfx.hit(); ND.audio.music.stop(); ND.voice.cancel();
       this.shake = 1.3; this.ui.flash();
       this.particles.burst(this.player.x, 1.2, 0, 0xff6a3c, 50, 7, 0.9, -12);
       for (const l of this.world.diyaLights) l.intensity = 0;
@@ -386,11 +392,14 @@
       if (newBest) { this.best = score; ND.store.set('nd_best', score); }
       const stats = {
         score, samosas: this.samosas, dist: Math.floor(this.dist), best: this.best, newBest, cause: this.cause,
-        rank: ND.util.tiered(TX.ranks, score), verdict: ND.util.tiered(TX.verdicts, score)
+        banner: PK(TX.gameOver), rank: ND.util.tiered(TX.ranks, score), verdict: ND.util.tiered(TX.verdicts, score)
       };
       ND.audio.sfx.gameOver();
       if (newBest) this.world.fireworks.volley(6, true);
       this.ui.showGameOver(stats);
+      if (newBest) ND.voice.say(TX.newBest, { force: true });
+      ND.voice.say(stats.banner, { queue: true });
+      ND.voice.say(stats.verdict, { queue: true });
     }
 
     /* ---------- pickups, powers, chain ---------- */
@@ -410,21 +419,21 @@
         const golden = u.type === 'golden';
         this.chain++; this.chainT = C.CHAIN_TIME;
         const tier = Math.min(3, Math.floor(this.chain / 10));
-        if (tier > this.chainTier) { this.chainTier = tier; ND.audio.sfx.chain(tier); this.ui.toast(TX.chain[tier - 1], 'gold'); this.fovKick = 3; }
+        if (tier > this.chainTier) { this.chainTier = tier; ND.audio.sfx.chain(tier); this.ui.toast(TX.chain[tier - 1], 'gold'); ND.voice.say(TX.chain[tier - 1]); this.fovKick = 3; }
         const pts = u.value * this.mult();
         this.score += pts; this.samosas++; this.streak++;
         this.floatText.show('+' + pts, pos.x, pos.y + 0.6, pos.z, golden ? '#ffe08a' : '#ffe6a8');
         this.particles.burst(pos.x, pos.y, pos.z, golden ? 0xffe08a : 0xffb347, golden ? 40 : 12, 4, 0.6, -6);
         this.ui.flySamosa(this.toScreen(pos));
-        if (golden) { ND.audio.sfx.golden(); this.ui.toast(PK(TX.golden), 'gold'); this.fovKick = 5; }
-        else { ND.audio.sfx.pickup(this.streak); if (this.streak % 10 === 0) this.ui.toast(PK(TX.praise)); }
+        if (golden) { ND.audio.sfx.golden(); const line = PK(TX.golden); this.ui.toast(line, 'gold'); ND.voice.say(line); this.fovKick = 5; }
+        else { ND.audio.sfx.pickup(this.streak); if (this.streak % 10 === 0) { const line = PK(TX.praise); this.ui.toast(line); ND.voice.say(line); } }
       } else {
         this.powers[u.type] = C.POWER_TIME[u.type];
         if (u.type === 'chai') this.player.setShield(true);
         this.player.aura.material.color.set(u.type === 'chai' ? 0xffd27a : u.type === 'jalebi' ? 0xff8c1a : 0xff5c8a);
         this.floatText.show(u.type === 'mithai' ? 'x2!' : u.type.toUpperCase() + '!', pos.x, pos.y + 0.8, pos.z, '#ffe08a');
         this.particles.burst(pos.x, pos.y, pos.z, 0xffe08a, 50, 6, 0.8, -4);
-        ND.audio.sfx.power(); this.ui.toast(PK(TX.power[u.type]), 'gold'); this.fovKick = 6;
+        ND.audio.sfx.power(); const line = PK(TX.power[u.type]); this.ui.toast(line, 'gold'); ND.voice.say(line, { force: true }); this.fovKick = 6;
       }
     }
     toScreen(pos) {
@@ -452,8 +461,10 @@
     }
     milestone() {
       const m = this.nextMilestone; this.nextMilestone += C.MILESTONE_EVERY;
-      this.ui.toast(TX.milestones[m] || PK(TX.milestoneGeneric), 'gold', 3200);
+      const line = TX.milestones[m] || PK(TX.milestoneGeneric);
+      this.ui.banner(line);
       this.ui.greet(PK(TX.greetings));
+      ND.voice.say(line, { force: true });
       ND.audio.sfx.milestone(); this.world.fireworks.volley(3, true);
     }
     onLand() {

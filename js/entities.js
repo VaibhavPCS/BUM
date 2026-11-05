@@ -95,14 +95,24 @@
   }
 
   /* ====================== PLAYER ====================== */
+  // rounded limb: capsule hanging from a joint at the origin (next joint centre at y = -len)
+  function capsuleGeo(r, len, radial, caps) {
+    radial = radial || 14; caps = caps || 6;
+    const pts = [];
+    for (let i = 0; i <= caps; i++) { const a = -Math.PI / 2 + (i / caps) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.cos(a) * r, -len / 2 + Math.sin(a) * r)); }
+    for (let i = 0; i <= caps; i++) { const a = (i / caps) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.cos(a) * r, len / 2 + Math.sin(a) * r)); }
+    return new THREE.LatheGeometry(pts, radial);
+  }
+  function limbGeo(r, len) { return capsuleGeo(r, len).translate(0, -len / 2, 0); }
+
   ND.Player = class Player {
     constructor(scene) {
       shared();
-      this.scene = scene;
+      this.scene = scene; this.camera = null;
       this.group = new THREE.Group(); scene.add(this.group);          // lane x, jump y, lean/bank
       this.pivot = new THREE.Group(); this.pivot.position.y = 0.9; this.group.add(this.pivot);   // roll / tumble pivot
       this.body = new THREE.Group(); this.body.position.y = -0.9; this.pivot.add(this.body);     // feet origin, squash/stretch
-      this.rig = new THREE.Group(); this.body.add(this.rig);           // procedural meshes (hidden when a GLB model is used)
+      this.rig = new THREE.Group(); this.body.add(this.rig);           // procedural figure (hidden when a GLB model is used)
       this.onLand = null; this.model = null; this.mixer = null; this.headBone = null;
       this._v = new THREE.Vector3(); this._v2 = new THREE.Vector3();
       this.build();
@@ -112,47 +122,82 @@
       this.reset();
     }
 
+    // Subway-Surfers proportions: big head, chunky hands and shoes, rounded limbs
     build() {
       const T = ND.tex, Rg = this.rig;
       const std = (o) => new THREE.MeshStandardMaterial(o);
-      const sherwani = std({ map: T.sherwani(), roughness: 0.75 });
-      const sleeve = std({ color: 0x8f1f36, roughness: 0.75 });
-      const churidar = std({ color: 0xf1e4c8, roughness: 0.85 });
-      const skin = std({ color: 0xd9a066, roughness: 0.7 });
-      const mojari = std({ color: 0xf2c14e, roughness: 0.4, metalness: 0.5 });
-      const mesh = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; (parent || Rg).add(o); return o; };
-      const box = (w, h, d, m, x, y, z, parent) => mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z, parent);
+      const kurtaTex = T.sherwani(); kurtaTex.wrapS = THREE.RepeatWrapping; kurtaTex.repeat.x = 2; kurtaTex.offset.x = 0.5; kurtaTex.needsUpdate = true;
+      const mat = {
+        kurta: std({ map: kurtaTex, roughness: 0.7, side: THREE.DoubleSide }),
+        maroon: std({ color: 0x8f1f36, roughness: 0.7 }),
+        turban: std({ color: 0x6a1628, roughness: 0.6 }),
+        cream: std({ color: 0xf1e4c8, roughness: 0.85 }),
+        skin: std({ color: 0xdba36f, roughness: 0.65 }),
+        shoe: std({ color: 0xf7eedc, roughness: 0.5 }),
+        sole: std({ color: 0x2a1a1f, roughness: 0.9 }),
+        steel: std({ color: 0xd4d8dd, roughness: 0.28, metalness: 0.85 }),
+        emerald: std({ color: 0x17a77a, roughness: 0.3, emissive: 0x0a5a40, emissiveIntensity: 0.4 })
+      };
+      const add = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; (parent || Rg).add(o); return o; };
       const pivotAt = (x, y, z, parent) => { const p = new THREE.Group(); p.position.set(x, y, z); (parent || Rg).add(p); return p; };
+      const torus = (r, t, seg) => new THREE.TorusGeometry(r, t, 10, seg || 28).rotateX(Math.PI / 2);
 
-      this.pelvis = box(0.62, 0.26, 0.38, churidar, 0, 0.98, 0);
-      this.torso = box(0.8, 0.74, 0.46, sherwani, 0, 1.47, 0);
-      box(0.68, 0.1, 0.42, M.gold, 0, 1.12, 0);
-      this.neck = mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.16, 10), skin, 0, 1.9, 0);
+      // torso: a rounded kurta (lathe), flattened front-to-back
+      const torsoPts = [[0, 0.9], [0.26, 0.9], [0.3, 1.02], [0.345, 1.28], [0.36, 1.5], [0.335, 1.7], [0.24, 1.82], [0.1, 1.86], [0, 1.86]].map(([x, y]) => new THREE.Vector2(x, y));
+      const torsoGeo = new THREE.LatheGeometry(torsoPts, 22); torsoGeo.scale(1, 1, 0.74);
+      this.torso = add(torsoGeo, mat.kurta, 0, 0, 0);
+      const hemGeo = new THREE.CylinderGeometry(0.3, 0.39, 0.26, 20, 1, true); hemGeo.scale(1, 1, 0.74);
+      this.pelvis = add(hemGeo, mat.kurta, 0, 0.84, 0);
+      add(torus(0.33, 0.045).scale(1, 1, 0.74), M.gold, 0, 1.1, 0);          // kamarband
+      add(torus(0.15, 0.045, 20), mat.turban, 0, 1.85, 0);                     // nehru collar
+      this.neck = add(new THREE.CylinderGeometry(0.1, 0.11, 0.16, 12), mat.skin, 0, 1.9, 0);
+      for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.14, 14, 10), mat.maroon, s * 0.36, 1.72, 0);   // shoulders
+      // samosa tiffin on the back
+      const tiffin = new THREE.Group(); tiffin.position.set(0, 1.12, 0.33); tiffin.scale.setScalar(0.92); Rg.add(tiffin);
+      add(new THREE.CylinderGeometry(0.17, 0.17, 0.16, 16), mat.steel, 0, -0.1, 0, tiffin);
+      add(new THREE.CylinderGeometry(0.17, 0.17, 0.16, 16), mat.steel, 0, 0.1, 0, tiffin);
+      add(new THREE.CylinderGeometry(0.178, 0.178, 0.02, 16), M.gold, 0, 0, 0, tiffin);
+      add(new THREE.TorusGeometry(0.09, 0.018, 8, 16), M.gold, 0, 0.24, 0, tiffin);
+      for (const s of [-1, 1]) { const strap = add(new THREE.BoxGeometry(0.05, 0.62, 0.035), mat.turban, s * 0.2, 1.46, 0.24); strap.rotation.x = -0.28; }
+      // legs: thigh, shin, chunky sneaker with a gold mojari toe
       this.legs = [-1, 1].map((s) => {
-        const hip = pivotAt(s * 0.17, 0.95, 0);
-        box(0.24, 0.5, 0.26, churidar, 0, -0.25, 0, hip);
-        const knee = pivotAt(0, -0.5, 0, hip);
-        box(0.2, 0.42, 0.22, churidar, 0, -0.21, 0, knee);
-        box(0.22, 0.1, 0.36, mojari, 0, -0.45, 0.06, knee);
+        const hip = pivotAt(s * 0.16, 0.93, 0);
+        add(limbGeo(0.13, 0.44), mat.cream, 0, 0, 0, hip);
+        const knee = pivotAt(0, -0.44, 0, hip);
+        add(limbGeo(0.11, 0.4), mat.cream, 0, 0, 0, knee);
+        const shoe = add(new THREE.SphereGeometry(1, 16, 12), mat.shoe, 0, -0.43, 0.07, knee); shoe.scale.set(0.16, 0.11, 0.27);
+        const sole = add(new THREE.SphereGeometry(1, 16, 12), mat.sole, 0, -0.5, 0.07, knee); sole.scale.set(0.165, 0.05, 0.275);
+        add(new THREE.SphereGeometry(0.085, 10, 8), M.gold, 0, -0.45, 0.3, knee);
         return { hip, knee };
       });
+      // arms: upper arm, forearm with gold cuff, big round hand
       this.arms = [-1, 1].map((s) => {
-        const sh = pivotAt(s * 0.5, 1.75, 0);
-        box(0.2, 0.38, 0.2, sleeve, 0, -0.19, 0, sh);
-        box(0.22, 0.08, 0.22, M.gold, 0, -0.36, 0, sh);
-        const el = pivotAt(0, -0.38, 0, sh);
-        box(0.17, 0.34, 0.17, sleeve, 0, -0.17, 0, el);
-        box(0.16, 0.14, 0.16, skin, 0, -0.4, 0, el);
-        sh.rotation.z = -s * 0.12;
+        const sh = pivotAt(s * 0.4, 1.7, 0);
+        add(limbGeo(0.1, 0.34), mat.maroon, 0, 0, 0, sh);
+        const el = pivotAt(0, -0.34, 0, sh);
+        add(limbGeo(0.09, 0.3), mat.maroon, 0, 0, 0, el);
+        add(torus(0.1, 0.03, 16), M.gold, 0, -0.27, 0, el);
+        add(new THREE.SphereGeometry(0.13, 14, 10), mat.skin, 0, -0.38, 0, el);
+        sh.rotation.z = -s * 0.14;
         return { sh, el };
       });
-      // the face: a billboard sprite (photo + Nawabi turban)
-      this.head = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.faceSprite(T.monogram()), transparent: true }));
-      this.head.scale.set(1.3, 1.3, 1); this.head.position.set(0, 2.36, 0); this.body.add(this.head);
-      this.headY = 2.36;
+      // head: a real sphere with ears and a 3D turban; the photo is a disc kept on the camera side
+      this.headGroup = new THREE.Group(); this.headGroup.position.set(0, 2.3, 0); this.body.add(this.headGroup);
+      this.headY = 2.3; this.headR = 0.45;
+      this.headMesh = add(new THREE.SphereGeometry(0.42, 24, 18), mat.skin, 0, 0, 0, this.headGroup);
+      for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.08, 10, 8), mat.skin, s * 0.41, -0.02, 0, this.headGroup);
+      const tb = new THREE.Group(); tb.position.y = 0.17; this.headGroup.add(tb);
+      const dome = add(new THREE.SphereGeometry(0.47, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), mat.turban, 0, 0, 0, tb); dome.scale.set(0.98, 0.74, 0.98);
+      add(torus(0.45, 0.07), mat.maroon, 0, 0, 0, tb);
+      add(torus(0.465, 0.032), M.gold, 0, 0.065, 0, tb);
+      add(new THREE.SphereGeometry(0.07, 10, 8), mat.emerald, 0, 0.2, -0.43, tb);
+      add(new THREE.TorusGeometry(0.1, 0.02, 8, 16), M.gold, 0, 0.2, -0.43, tb);
+      const plume = add(new THREE.ConeGeometry(0.035, 0.42, 8), M.gold, 0.05, 0.5, -0.4, tb); plume.rotation.x = -0.35; plume.rotation.z = -0.2;
+      this.head = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.faceSprite(T.monogram(), { turban: false }), transparent: true }));
+      this.head.scale.set(1.02, 1.02, 1); this.scene.add(this.head);
       // effects live on the group so they don't roll with the body
-      this.shield = new THREE.Mesh(new THREE.SphereGeometry(1.4, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      this.shield.position.y = 1.2; this.shield.visible = false; this.group.add(this.shield);
+      this.shield = new THREE.Mesh(new THREE.SphereGeometry(1.5, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      this.shield.position.y = 1.4; this.shield.visible = false; this.group.add(this.shield);
       this.shieldRing = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.05, 8, 40), new THREE.MeshBasicMaterial({ color: 0xffe6a8, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
       this.shieldRing.rotation.x = Math.PI / 2; this.shieldRing.position.y = 0.12; this.shieldRing.visible = false; this.group.add(this.shieldRing);
       this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.glow(), color: 0xffb347, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -162,7 +207,7 @@
     buildRibbon() {
       const N = 8; this.ribN = N; this.ribPts = [];
       for (let i = 0; i < N; i++) this.ribPts.push(new THREE.Vector3(-0.42 - i * 0.06, 1.82, 0.2 + i * 0.16));
-      this.ribAnchor = new THREE.Object3D(); this.ribAnchor.position.set(-0.46, 1.84, 0.12); this.rig.add(this.ribAnchor);
+      this.ribAnchor = new THREE.Object3D(); this.ribAnchor.position.set(-0.44, 1.8, 0.16); this.rig.add(this.ribAnchor);
       const geo = new THREE.BufferGeometry();
       const pos = new Float32Array(N * 6), uv = new Float32Array(N * 4), nor = new Float32Array(N * 6), idx = [];
       for (let i = 0; i < N; i++) {
@@ -200,6 +245,20 @@
       this.ribbon.geometry.attributes.position.needsUpdate = true;
     }
 
+    // keep the photo disc between the head and the camera, so the face reads from behind
+    placeHead() {
+      const v = this._v;
+      if (this.model) {
+        if (this.headBone) { this.headBone.getWorldPosition(v); v.y += 0.1; }
+        else this.body.localToWorld(v.set(0, this.headY, 0));
+      } else this.headGroup.getWorldPosition(v);
+      if (this.camera) {
+        this._v2.copy(this.camera.position).sub(v).normalize();
+        v.addScaledVector(this._v2, this.model ? 0.22 : this.headR);
+      }
+      this.head.position.copy(v);
+    }
+
     /* optional rigged GLB character (e.g. Mixamo) */
     setModel(gltf) {
       const scene = gltf.scene;
@@ -212,7 +271,7 @@
       scene.position.x -= (box.min.x + box.max.x) / 2;
       scene.position.z -= (box.min.z + box.max.z) / 2;
       scene.rotation.y = Math.PI;
-      this.model = scene; this.body.add(scene); this.rig.visible = false;
+      this.model = scene; this.body.add(scene); this.rig.visible = false; this.headGroup.visible = false;
       this.mixer = new THREE.AnimationMixer(scene);
       const find = (re) => gltf.animations.find((c) => re.test(c.name));
       const clips = {
@@ -229,7 +288,8 @@
       let head = null;
       scene.traverse((o) => { if (!head && o.isBone && /head/i.test(o.name)) head = o; });
       this.headBone = head;
-      this.headY = box.max.y - (head ? 0 : 0) + 0.45;
+      this.headY = box.max.y - box.min.y + 0.3;
+      this.head.scale.set(0.9, 0.9, 1);
       this.play('run');
     }
     play(name, reset) {
@@ -244,10 +304,6 @@
       if (!this.mixer) return;
       if (this.actions.run) this.actions.run.timeScale = 0.75 + speed / 32;
       this.mixer.update(dt);
-      if (this.headBone) {
-        this.headBone.getWorldPosition(this._v); this.body.worldToLocal(this._v);
-        this.head.position.set(this._v.x, this._v.y + 0.35, this._v.z);
-      } else this.head.position.set(0, this.headY, 0);
     }
 
     setFace(tex) {
@@ -261,9 +317,10 @@
       this.dead = false; this.deadT = 0; this.phase = 0; this.t = 0; this.airT = 0;
       this.group.rotation.set(0, 0, 0); this.group.position.set(0, 0, 0);
       this.pivot.rotation.set(0, 0, 0); this.pivot.position.y = 0.9; this.body.scale.set(1, 1, 1);
-      this.head.position.y = this.headY;
+      this.headGroup.position.y = 2.3;
       this.shield.visible = false; this.shieldRing.visible = false; this.aura.material.opacity = 0;
       if (this.model) this.play('run', true);
+      this.placeHead();
     }
     setShield(on) { this.shield.visible = on; this.shieldRing.visible = on; }
     moveLane(dir) {
@@ -313,6 +370,7 @@
         g.position.set(this.x, this.y, Math.min(1.6, this.deadT * 2.4));
         this.shadow.position.set(this.x, 0.02, g.position.z);
         this.updateRibbon(dt, speed * 0.3, t);
+        this.placeHead();
         return;
       }
       this.phase += dt * (9 + speed * 0.35);
@@ -335,13 +393,13 @@
             const e = easeInOut(u / rollFrac);
             this.rolling = true;
             this.pivot.rotation.x = -Math.PI * 2 * e;
-            this.pivot.position.y = lerp(0.9, 0.62, Math.sin(e * Math.PI));
-            this.head.position.y = lerp(this.head.position.y, 1.35, k);
+            this.pivot.position.y = lerp(0.9, 0.58, Math.sin(e * Math.PI));
+            this.headGroup.position.y = lerp(this.headGroup.position.y, 1.2, k);
           } else { this.rolling = false; this.pivot.rotation.x = 0; this.pivot.position.y = 0.9; }
         }
         if (this.slideT <= 0) { this.sliding = false; this.rolling = false; this.pivot.rotation.x = 0; this.pivot.position.y = 0.9; if (this.model) this.play('run'); }
       }
-      if (!this.rolling && !this.model) this.head.position.y = lerp(this.head.position.y, this.headY, k);
+      if (!this.rolling) this.headGroup.position.y = lerp(this.headGroup.position.y, 2.3, k);
       // squash / stretch recovery
       this.body.scale.x = lerp(this.body.scale.x, 1, k); this.body.scale.y = lerp(this.body.scale.y, 1, k); this.body.scale.z = lerp(this.body.scale.z, 1, k);
       // lanes
@@ -363,6 +421,7 @@
         this.shieldRing.rotation.z += dt * 2;
       }
       this.updateRibbon(dt, speed, t);
+      this.placeHead();
     }
 
     // procedural pose: run cycle, jump tuck/extend, roll tuck, tumble flail

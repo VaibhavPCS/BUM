@@ -35,6 +35,7 @@
       this.floatText = new ND.FloatText(this.scene);
       this.streaks = new ND.Streaks(this.scene, 16);
       this.player = new ND.Player(this.scene);
+      this.player.camera = this.camera;
       this.player.onLand = () => this.onLand();
       this.world.fireworks.onBurst = (x, y, z) => { if (this.state !== 'paused') ND.audio.sfx.boom(z < -140); };
       this.obstacles = []; this.pickups = [];
@@ -500,12 +501,12 @@
       if (!this.photoCanvas) return;
       const T = ND.tex;
       if (this.placement === 'hurdle') {
-        this.player.setFace(T.faceSprite(T.cartoonNawab()));
+        this.player.setFace(T.faceSprite(T.cartoonNawab(), { turban: false }));
         if (this.photoTex) this.photoTex.dispose();
         this.photoTex = T.photoTexture(this.photoCanvas);
         ND.Obs.setPhoto(this.photoTex);
       } else {
-        this.player.setFace(T.faceSprite(this.photoCanvas));
+        this.player.setFace(T.faceSprite(this.photoCanvas, { turban: false }));
         ND.Obs.setPhoto(null);
       }
     }
